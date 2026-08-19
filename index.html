@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>No Fluff — Sales Leaderboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #080c18;
+      color: #e8eaf6;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      padding: 32px 16px;
+    }
+
+    /* ── Header ── */
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #c9a84c;
+    }
+    .header .subtitle {
+      font-size: 0.85rem;
+      color: #7986cb;
+      margin-top: 6px;
+      letter-spacing: 0.05em;
+    }
+    .header .week-label {
+      font-size: 0.9rem;
+      color: #9e9e9e;
+      margin-top: 4px;
+    }
+
+    /* ── Status bar ── */
+    .status-bar {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 32px;
+      font-size: 0.75rem;
+      color: #616161;
+    }
+    .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #4caf50;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* ── Podium (top 3) ── */
+    .podium {
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      gap: 12px;
+      margin-bottom: 40px;
+      flex-wrap: wrap;
+    }
+    .podium-card {
+      background: #0f1629;
+      border: 1px solid #1e2a4a;
+      border-radius: 16px;
+      padding: 24px 20px;
+      text-align: center;
+      min-width: 160px;
+      flex: 1;
+      max-width: 220px;
+      position: relative;
+      transition: transform 0.2s;
+    }
+    .podium-card:hover { transform: translateY(-4px); }
+    .podium-card.rank-1 {
+      border-color: #c9a84c;
+      background: linear-gradient(160deg, #12192e, #1a1400);
+      box-shadow: 0 0 30px rgba(201, 168, 76, 0.15);
+    }
+    .podium-card.rank-2 { border-color: #9e9e9e; }
+    .podium-card.rank-3 { border-color: #cd7f32; }
+
+    .medal { font-size: 2rem; margin-bottom: 8px; display: block; }
+    .rep-name {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #e8eaf6;
+      margin-bottom: 4px;
+    }
+    .rep-revenue {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: #c9a84c;
+      margin-bottom: 12px;
+    }
+    .podium-stats {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      font-size: 0.78rem;
+      color: #9e9e9e;
+    }
+    .podium-stats .stat-val {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #e8eaf6;
+      display: block;
+    }
+
+    /* ── Full Table ── */
+    .table-wrap {
+      max-width: 900px;
+      margin: 0 auto 40px;
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    thead th {
+      background: #0f1629;
+      color: #7986cb;
+      padding: 12px 16px;
+      text-align: left;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      border-bottom: 1px solid #1e2a4a;
+    }
+    tbody tr {
+      border-bottom: 1px solid #111827;
+      transition: background 0.15s;
+    }
+    tbody tr:hover { background: #0f1629; }
+    tbody td {
+      padding: 14px 16px;
+      color: #e0e0e0;
+    }
+    tbody tr.totals-row {
+      background: #0f1629;
+      border-top: 2px solid #1e2a4a;
+    }
+    tbody tr.totals-row td {
+      font-weight: 700;
+      color: #c9a84c;
+    }
+    .rank-badge {
+      font-size: 1.1rem;
+      display: inline-block;
+      width: 28px;
+    }
+    .rate-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .rate-high { background: rgba(76,175,80,0.15); color: #81c784; }
+    .rate-mid  { background: rgba(255,193,7,0.12);  color: #ffd54f; }
+    .rate-low  { background: rgba(244,67,54,0.12);  color: #e57373; }
+
+    /* ── Loading / Error ── */
+    .loading {
+      text-align: center;
+      color: #616161;
+      padding: 80px 0;
+      font-size: 0.9rem;
+    }
+    .error {
+      text-align: center;
+      color: #e57373;
+      padding: 40px;
+      font-size: 0.85rem;
+      background: rgba(244,67,54,0.08);
+      border-radius: 12px;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      text-align: center;
+      color: #424242;
+      font-size: 0.72rem;
+      margin-top: 40px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>🏆 No Fluff Program</h1>
+    <div class="subtitle">Sales Leaderboard</div>
+    <div class="week-label" id="week-label">Loading...</div>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-dot"></div>
+    <span id="updated-at">Fetching latest data...</span>
+  </div>
+
+  <div id="app">
+    <div class="loading">Loading leaderboard...</div>
+  </div>
+
+  <div class="footer">No Fluff Program · Auto-refreshes every 5 minutes</div>
+
+  <script>
+    // ── PASTE YOUR WEB APP URL HERE ─────────────────────────────────────────
+    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwsj97pFpQV74pzvm74msWKk6iUFpVhHliVIpmWlw4-pfAZhhgyrOQZQV05wQ8Ydlab/exec';
+    // ────────────────────────────────────────────────────────────────────────
+
+    const MEDALS = ['🥇', '🥈', '🥉'];
+
+    function ratePill(val) {
+      if (val == null) return '<span style="color:#424242">N/A</span>';
+      const cls = val >= 60 ? 'rate-high' : val >= 35 ? 'rate-mid' : 'rate-low';
+      return `<span class="rate-pill ${cls}">${val}%</span>`;
+    }
+
+    function fmt(n) {
+      return '$' + Number(n).toLocaleString();
+    }
+
+    function render(data) {
+      const { reps, totals, weekLabel, updatedAt } = data;
+
+      document.getElementById('week-label').textContent = 'Week of ' + weekLabel;
+
+      const d = new Date(updatedAt);
+      document.getElementById('updated-at').textContent =
+        'Last updated: ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      if (!reps || reps.length === 0) {
+        document.getElementById('app').innerHTML =
+          '<div class="loading">No submissions yet this week. Check back after 6 PM.</div>';
+        return;
+      }
+
+      // Podium — top 3
+      const top3 = reps.slice(0, 3);
+      const podiumHTML = top3.map((rep, i) => `
+        <div class="podium-card rank-${i + 1}">
+          <span class="medal">${MEDALS[i]}</span>
+          <div class="rep-name">${rep.name}</div>
+          <div class="rep-revenue">${fmt(rep.revenue)}</div>
+          <div class="podium-stats">
+            <div>
+              <span class="stat-val">${rep.closes}</span>
+              Closes
+            </div>
+            <div>
+              <span class="stat-val">${rep.blueprints}</span>
+              BPs
+            </div>
+            <div>
+              <span class="stat-val">${rep.closeRate != null ? rep.closeRate + '%' : '—'}</span>
+              Close%
+            </div>
+          </div>
+        </div>
+      `).join('');
+
+      // Full table
+      const rowsHTML = reps.map((rep, i) => `
+        <tr>
+          <td><span class="rank-badge">${MEDALS[i] || (i + 1)}</span></td>
+          <td><strong>${rep.name}</strong></td>
+          <td>${rep.closes}</td>
+          <td><strong>${fmt(rep.revenue)}</strong></td>
+          <td>${rep.blueprints}</td>
+          <td>${rep.setCalls}</td>
+          <td>${ratePill(rep.showRate)}</td>
+          <td>${ratePill(rep.closeRate)}</td>
+        </tr>
+      `).join('');
+
+      const totalsRow = `
+        <tr class="totals-row">
+          <td>—</td>
+          <td>TEAM TOTAL</td>
+          <td>${totals.closes}</td>
+          <td>${fmt(totals.revenue)}</td>
+          <td>${totals.blueprints}</td>
+          <td>${totals.setCalls}</td>
+          <td>${ratePill(totals.showRate)}</td>
+          <td>${ratePill(totals.closeRate)}</td>
+        </tr>
+      `;
+
+      document.getElementById('app').innerHTML = `
+        <div class="podium">${podiumHTML}</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Rep</th>
+                <th>Closes</th>
+                <th>Revenue</th>
+                <th>Blueprints</th>
+                <th>Set Calls</th>
+                <th>Show Rate</th>
+                <th>Close Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHTML}
+              ${totalsRow}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    async function fetchLeaderboard() {
+      if (WEB_APP_URL === 'PASTE_WEB_APP_URL_HERE') {
+        document.getElementById('app').innerHTML =
+          '<div class="error">⚠️ Web App URL not set.<br>Open index.html and paste your Google Apps Script URL into WEB_APP_URL.</div>';
+        return;
+      }
+      try {
+        const res = await fetch(WEB_APP_URL);
+        const data = await res.json();
+        render(data);
+      } catch (err) {
+        document.getElementById('app').innerHTML =
+          `<div class="error">⚠️ Could not load leaderboard.<br><small>${err.message}</small></div>`;
+      }
+    }
+
+    fetchLeaderboard();
+    setInterval(fetchLeaderboard, 5 * 60 * 1000); // refresh every 5 min
+  </script>
+</body>
+</html>
