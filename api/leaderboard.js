@@ -1,9 +1,9 @@
 // api/leaderboard.js — reads Google Sheet CSV directly (no GAS needed)
-// Bypasses GAS auth issues by fetching the public CSV export URL
+// Supports ?mode=day|week|month&date=YYYY-MM-DD (defaults: week + today)
 
-const SHEET_ID = '1sJwNPM7_mhL5_5AzhzLXh_SjklJBHVCbhlsCRpYuGts';
+const SHEET_ID   = '1sJwNPM7_mhL5_5AzhzLXh_SjklJBHVCbhlsCRpYuGts';
 const SHEET_NAME = 'Form Responses 1';
-const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
+const CSV_URL    = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
 
 // ── CSV Parser ───────────────────────────────────────────────────────────────
 function parseCSVLine(line) {
@@ -58,9 +58,17 @@ function toNum(val) {
   return isNaN(n) ? 0 : n;
 }
 
-function getWeekBounds(now) {
-  const d = new Date(now);
-  const day = d.getDay();
+function getDayBounds(anchor) {
+  const start = new Date(anchor);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(anchor);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
+function getWeekBounds(anchor) {
+  const d    = new Date(anchor);
+  const day  = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   const start = new Date(d);
   start.setDate(diff);
@@ -71,14 +79,26 @@ function getWeekBounds(now) {
   return { start, end };
 }
 
+function getMonthBounds(anchor) {
+  const d     = new Date(anchor);
+  const start = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+  const end   = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+  return { start, end };
+}
+
 function formatDate(d) {
   return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
 }
 
+function buildLabel(mode, start, end) {
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  if (mode === 'day')   return formatDate(start);
+  if (mode === 'month') return `${MONTHS[start.getMonth()]} ${start.getFullYear()}`;
+  return `${formatDate(start)} – ${formatDate(end)}`;
+}
+
 // ── Leaderboard Builder ──────────────────────────────────────────────────────
-function buildLeaderboard(rows) {
-  const now = new Date();
-  const { start, end } = getWeekBounds(now);
+function buildLeaderboard(rows, start, end) {
   const reps = {};
 
   for (const row of rows) {
@@ -111,8 +131,8 @@ function buildLeaderboard(rows) {
 
   const repList = Object.values(reps).map(rep => {
     const booked = rep.blueprints + rep.noShows;
-    rep.showRate        = booked > 0         ? Math.round((rep.blueprints / booked)         * 100) : null;
-    rep.closeRate       = rep.blueprints > 0 ? Math.round((rep.closes     / rep.blueprints) * 100) : null;
+    rep.showRate         = booked > 0         ? Math.round((rep.blueprints / booked)         * 100) : null;
+    rep.closeRate        = rep.blueprints > 0 ? Math.round((rep.closes     / rep.blueprints) * 100) : null;
     rep.topObjectionText = Object.keys(rep.topObjection)
       .sort((a, b) => rep.topObjection[b] - rep.topObjection[a])[0] || null;
     return rep;
@@ -127,16 +147,11 @@ function buildLeaderboard(rows) {
     return acc;
   }, { closes: 0, revenue: 0, blueprints: 0, noShows: 0, setCalls: 0 });
 
-  const teamBooked = totals.blueprints + totals.noShows;
-  totals.showRate  = teamBooked > 0        ? Math.round((totals.blueprints / teamBooked)        * 100) : null;
-  totals.closeRate = totals.blueprints > 0 ? Math.round((totals.closes     / totals.blueprints) * 100) : null;
+  const teamBooked  = totals.blueprints + totals.noShows;
+  totals.showRate   = teamBooked > 0        ? Math.round((totals.blueprints / teamBooked)        * 100) : null;
+  totals.closeRate  = totals.blueprints > 0 ? Math.round((totals.closes     / totals.blueprints) * 100) : null;
 
-  return {
-    weekLabel: `${formatDate(start)} – ${formatDate(end)}`,
-    updatedAt: now.toISOString(),
-    reps: repList,
-    totals,
-  };
+  return { reps: repList, totals };
 }
 
 // ── Vercel Handler ───────────────────────────────────────────────────────────
@@ -145,12 +160,29 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate');
 
   try {
+    // Parse query params — mode defaults to 'week', date defaults to today
+    const mode   = ['day','week','month'].includes(req.query.mode) ? req.query.mode : 'week';
+    const anchor = req.query.date ? new Date(req.query.date) : new Date();
+    if (isNaN(anchor)) return res.status(400).json({ error: 'Invalid date param' });
+
+    const bounds =
+      mode === 'day'   ? getDayBounds(anchor)   :
+      mode === 'month' ? getMonthBounds(anchor)  :
+                         getWeekBounds(anchor);
+
     const response = await fetch(CSV_URL);
     if (!response.ok) throw new Error(`Sheet fetch failed: ${response.status}`);
-    const csv = await response.text();
+    const csv  = await response.text();
     const rows = parseCSV(csv);
-    const data = buildLeaderboard(rows);
-    res.status(200).json(data);
+    const { reps, totals } = buildLeaderboard(rows, bounds.start, bounds.end);
+
+    res.status(200).json({
+      mode,
+      label:     buildLabel(mode, bounds.start, bounds.end),
+      updatedAt: new Date().toISOString(),
+      reps,
+      totals,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
